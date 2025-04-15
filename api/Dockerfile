@@ -38,8 +38,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (without running puppeteer postinstall script yet)
+RUN npm install --ignore-scripts
 
 # Copy the rest of the application
 COPY . .
@@ -48,6 +48,11 @@ COPY . .
 ENV NODE_ENV=production
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+
+# Fix permissions and install Puppeteer browser directly
+RUN mkdir -p /opt/render/.cache/puppeteer \
+    && chmod -R 777 /opt/render/.cache \
+    && google-chrome-stable --version
 
 # Expose port
 EXPOSE 10000

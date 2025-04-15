@@ -5,8 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "build": "npm install puppeteer --save && npx puppeteer browsers install chrome",
-    "postinstall": "npx puppeteer browsers install chrome"
+    "build": "echo \"Using Dockerfile for build process\""
   },
   "author": "",
   "license": "ISC",

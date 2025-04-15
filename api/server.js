@@ -25,7 +25,7 @@ const wss = new WebSocketServer({
   }
 });
 
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 10000;
 
 // Configure standard CORS for HTTP routes
 app.use(cors({
@@ -80,23 +80,31 @@ wss.on('connection', (ws) => {
 
         let browser;
         try {
+            console.log('Launching Chrome...');
+            const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable';
+            console.log(`Using Chrome at: ${executablePath}`);
+            
             // Configure Puppeteer to work in Render's environment
             browser = await puppeteer.launch({
                 headless: true,
-                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+                executablePath,
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-accelerated-2d-canvas',
                     '--no-first-run',
+                    '--single-process',
                     '--no-zygote',
                     '--disable-gpu'
                 ],
                 ignoreHTTPSErrors: true
             });
             
+            console.log('Chrome launched successfully');
             const page = await browser.newPage();
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
+            
             const visitedUrls = new Set();
             const urlQueue = [url];
             const scrapedData = [];
@@ -119,7 +127,10 @@ wss.on('connection', (ws) => {
                 }
 
                 try {
-                    await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    await page.goto(currentUrl, { 
+                        waitUntil: 'domcontentloaded', 
+                        timeout: 30000 
+                    });
                 } catch (error) {
                     console.error(`Failed to navigate to ${currentUrl}:`, error);
                     continue; // Skip this URL and continue with the next one
@@ -187,7 +198,11 @@ wss.on('connection', (ws) => {
                 console.error('Error sending error message:', e);
             }
             if (browser) {
-                await browser.close();
+                try {
+                    await browser.close();
+                } catch (closeError) {
+                    console.error('Error closing browser:', closeError);
+                }
             }
         }
     });
@@ -219,6 +234,12 @@ app.get('/health', (req, res) => {
   res.status(200).send({ status: 'OK', clients: wss.clients.size });
 });
 
+// Add a root endpoint for basic checks
+app.get('/', (req, res) => {
+  res.status(200).send({ status: 'Server is running' });
+});
+
+console.log(`Starting server on port ${port}`);
 server.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
