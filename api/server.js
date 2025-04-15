@@ -80,9 +80,22 @@ wss.on('connection', (ws) => {
 
         let browser;
         try {
+            // Configure Puppeteer to work in Render's environment
             browser = await puppeteer.launch({
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+                headless: true,
+                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu'
+                ],
+                ignoreHTTPSErrors: true
             });
+            
             const page = await browser.newPage();
             const visitedUrls = new Set();
             const urlQueue = [url];
@@ -106,7 +119,7 @@ wss.on('connection', (ws) => {
                 }
 
                 try {
-                    await page.goto(currentUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+                    await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 } catch (error) {
                     console.error(`Failed to navigate to ${currentUrl}:`, error);
                     continue; // Skip this URL and continue with the next one
@@ -169,7 +182,7 @@ wss.on('connection', (ws) => {
         } catch (error) {
             console.error('Unexpected Error:', error);
             try {
-                ws.send(JSON.stringify({ error: 'An unexpected error occurred.' }));
+                ws.send(JSON.stringify({ error: 'An unexpected error occurred: ' + error.message }));
             } catch (e) {
                 console.error('Error sending error message:', e);
             }
