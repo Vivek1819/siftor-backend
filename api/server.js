@@ -8,9 +8,22 @@ import { fileURLToPath } from 'url';
 import { URL } from 'url';
 import http from 'http';
 import { WebSocketServer } from 'ws';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Try to install Chrome if we're in a production environment and it's not installed
+try {
+    console.log('Checking Chrome installation...');
+    if (process.env.NODE_ENV === 'production') {
+        console.log('Installing Chrome for Puppeteer...');
+        execSync('npx puppeteer browsers install chrome', { stdio: 'inherit' });
+        console.log('Chrome installation completed');
+    }
+} catch (error) {
+    console.warn('Failed to install Chrome:', error.message);
+}
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -80,7 +93,7 @@ wss.on('connection', (ws) => {
 
         let browser;
         try {
-            console.log('Launching Chrome...');
+            console.log('Launching browser...');
             
             // Configure Puppeteer with more flexible browser options
             const launchOptions = {
@@ -98,16 +111,23 @@ wss.on('connection', (ws) => {
                 ignoreHTTPSErrors: true
             };
             
-            // Only use executablePath if it's explicitly set in env variables
-            if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-                console.log(`Using Chrome at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
-                launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-            } else {
-                console.log('Using bundled Chromium');
+            // Try to use puppeteer's built-in browser management system first
+            try {
+                browser = await puppeteer.launch(launchOptions);
+                console.log('Browser launched successfully using built-in browser management');
+            } catch (browserError) {
+                console.error('Failed to launch browser with default options:', browserError.message);
+                
+                // Fall back to explicit executable path if available
+                if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+                    console.log(`Trying with Chrome at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+                    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+                    browser = await puppeteer.launch(launchOptions);
+                    console.log('Browser launched successfully with explicit path');
+                } else {
+                    throw browserError;
+                }
             }
-            
-            browser = await puppeteer.launch(launchOptions);
-            console.log('Browser launched successfully');
             
             const page = await browser.newPage();
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');

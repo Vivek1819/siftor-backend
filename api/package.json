@@ -5,7 +5,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "build": "echo \"Using Dockerfile for build process\""
+    "start:prod": "npx puppeteer browsers install chrome && NODE_ENV=production node server.js",
+    "build": "npx puppeteer browsers install chrome"
   },
   "author": "",
   "license": "ISC",
