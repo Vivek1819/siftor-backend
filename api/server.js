@@ -16,23 +16,60 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
-const port = 5000;
+// Configure WebSocket with heartbeat to prevent disconnections
+const wss = new WebSocketServer({ 
+  server,
+  // Enable CORS for all origins
+  verifyClient: (info, cb) => {
+    cb(true);
+  }
+});
 
-app.use(cors());
+const port = process.env.PORT || 5000;
+
+// Configure standard CORS for HTTP routes
+app.use(cors({
+  origin: '*', // Allow all origins
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
 app.use(express.json());
 
-const MAX_PAGES = 1000; 
+const MAX_PAGES = 1000;
+
+// Implement WebSocket ping/pong to keep connections alive
+function heartbeat() {
+  this.isAlive = true;
+}
 
 wss.on('connection', (ws) => {
     console.log('Websocket connected');
+    ws.isAlive = true;
+    ws.on('pong', heartbeat);
+
+    // Send immediate welcome message to confirm connection
+    try {
+        ws.send(JSON.stringify({ status: 'connected' }));
+    } catch (e) {
+        console.error('Error sending welcome message:', e);
+    }
 
     ws.on('close', () => {
         console.log('Websocket disconnected');
     });
 
     ws.on('message', async (message) => {
-        const { url } = JSON.parse(message);
+        let msgData;
+        try {
+            msgData = JSON.parse(message);
+        } catch (e) {
+            console.error('Invalid JSON message received:', e);
+            ws.send(JSON.stringify({ error: 'Invalid message format' }));
+            return;
+        }
+
+        const { url } = msgData;
         console.log('Scraping URL:', url);
 
         if (!url) {
@@ -43,7 +80,9 @@ wss.on('connection', (ws) => {
 
         let browser;
         try {
-            browser = await puppeteer.launch();
+            browser = await puppeteer.launch({
+                args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
             const page = await browser.newPage();
             const visitedUrls = new Set();
             const urlQueue = [url];
@@ -59,10 +98,15 @@ wss.on('connection', (ws) => {
                 }
 
                 console.log(`Visiting URL: ${currentUrl}`);
-                ws.send(JSON.stringify({ visiting: currentUrl })); // Emit the currently visiting URL
+                try {
+                    ws.send(JSON.stringify({ visiting: currentUrl }));
+                } catch (e) {
+                    console.error('Error sending visiting message:', e);
+                    break; // Stop if we can't communicate with the client
+                }
 
                 try {
-                    await page.goto(currentUrl, { waitUntil: 'networkidle2' });
+                    await page.goto(currentUrl, { waitUntil: 'networkidle2', timeout: 30000 });
                 } catch (error) {
                     console.error(`Failed to navigate to ${currentUrl}:`, error);
                     continue; // Skip this URL and continue with the next one
@@ -116,16 +160,50 @@ wss.on('connection', (ws) => {
             console.log('Closing Puppeteer...');
             await browser.close();
 
-            ws.send(JSON.stringify({ scrapedData }));
+            try {
+                ws.send(JSON.stringify({ scrapedData }));
+            } catch (e) {
+                console.error('Error sending final scraped data:', e);
+            }
 
         } catch (error) {
             console.error('Unexpected Error:', error);
-            ws.send(JSON.stringify({ error: 'An unexpected error occurred.' }));
+            try {
+                ws.send(JSON.stringify({ error: 'An unexpected error occurred.' }));
+            } catch (e) {
+                console.error('Error sending error message:', e);
+            }
             if (browser) {
                 await browser.close();
             }
         }
     });
+});
+
+// Set up the ping interval to keep connections alive
+const interval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      console.log('Terminating inactive WebSocket connection');
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    try {
+      ws.ping();
+    } catch (e) {
+      console.error('Error pinging client:', e);
+      ws.terminate();
+    }
+  });
+}, 30000); // Ping every 30 seconds
+
+wss.on('close', function close() {
+  clearInterval(interval);
+});
+
+// Add a health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).send({ status: 'OK', clients: wss.clients.size });
 });
 
 server.listen(port, () => {
