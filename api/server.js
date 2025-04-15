@@ -81,13 +81,10 @@ wss.on('connection', (ws) => {
         let browser;
         try {
             console.log('Launching Chrome...');
-            const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable';
-            console.log(`Using Chrome at: ${executablePath}`);
             
-            // Configure Puppeteer to work in Render's environment
-            browser = await puppeteer.launch({
-                headless: true,
-                executablePath,
+            // Configure Puppeteer with more flexible browser options
+            const launchOptions = {
+                headless: 'new',
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -99,9 +96,19 @@ wss.on('connection', (ws) => {
                     '--disable-gpu'
                 ],
                 ignoreHTTPSErrors: true
-            });
+            };
             
-            console.log('Chrome launched successfully');
+            // Only use executablePath if it's explicitly set in env variables
+            if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+                console.log(`Using Chrome at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+                launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+            } else {
+                console.log('Using bundled Chromium');
+            }
+            
+            browser = await puppeteer.launch(launchOptions);
+            console.log('Browser launched successfully');
+            
             const page = await browser.newPage();
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
             
